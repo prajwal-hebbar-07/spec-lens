@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlanViewer } from "@/components/PlanViewer";
+import { UsageDashboard } from "@/components/UsageDashboard";
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +33,8 @@ export default function Home() {
         />
         <Button onClick={() => inputRef.current?.click()}>Browse…</Button>
       </header>
+
+      <UsageDashboard />
 
       {markdown === null ? (
         <p className="text-muted-foreground">Pick a plan Markdown file to view it.</p>
