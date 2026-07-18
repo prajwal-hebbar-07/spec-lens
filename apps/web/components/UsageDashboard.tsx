@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useConnection } from "@/components/ConnectionProvider";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ChatDetail, Provider, UsageGauges } from "@/lib/dashboard";
 
@@ -119,41 +120,32 @@ export function UsageDashboard() {
           ))}
         </div>
 
-        <label className="min-w-40 flex-1 xl:max-w-56">
-          <span className="sr-only">Account</span>
-          <select
-            className="field h-9 w-full truncate rounded-lg"
+        <div className="min-w-48 flex-1">
+          <Select
+            label="Account"
+            className="h-9 rounded-lg"
             value={accountKey}
-            onChange={(e) => setAccountKey(e.target.value)}
+            onValueChange={setAccountKey}
             disabled={providerAccounts.length === 0}
-          >
-            {providerAccounts.length === 0 && <option value="">No accounts found</option>}
-            {providerAccounts.map((a) => (
-              <option key={a.key} value={a.key}>
-                {a.email ?? a.key}
-                {a.plan ? ` · ${a.plan}` : ""}
-                {a.active ? " · active" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+            placeholder="No accounts found"
+            options={providerAccounts.map((account) => ({
+              value: account.key,
+              label: `${account.displayName ?? account.email ?? account.key}${account.displayName && account.email ? ` · ${account.email}` : ""}`,
+            }))}
+          />
+        </div>
 
-        <label className="min-w-52 flex-[1.5] xl:max-w-sm">
-          <span className="sr-only">Conversation</span>
-          <select
-            className="field h-9 w-full truncate rounded-lg"
+        <div className="min-w-64 flex-[1.5]">
+          <Select
+            label="Conversation"
+            className="h-9 rounded-lg"
             value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
+            onValueChange={setChatId}
             disabled={chats.length === 0}
-          >
-            {chats.length === 0 && <option value="">No conversations found</option>}
-            {chats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
-        </label>
+            placeholder="No conversations found"
+            options={chats.map((chat) => ({ value: chat.id, label: chat.title }))}
+          />
+        </div>
       </div>
 
       <div

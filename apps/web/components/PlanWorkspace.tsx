@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FileText, MessageSquare, MessageSquarePlus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { PlanViewer, type SelectionAnchor } from "@/components/PlanViewer";
 import { useConnection } from "@/components/ConnectionProvider";
 import { parsePlanComments } from "@/lib/plan-comments";
@@ -160,19 +161,18 @@ export function PlanWorkspace() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <select
-                aria-label="Select a plan"
-                className="field min-w-0 sm:w-64"
+              <Select
+                label="Select a plan"
+                className="min-w-0 sm:w-64"
                 value={name}
-                onChange={(e) => openPlan(e.target.value)}
-              >
-                <option value="">{plans.length ? "Select a plan…" : "No plans found"}</option>
-                {plans.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={openPlan}
+                disabled={plans.length === 0}
+                placeholder={plans.length ? "Select a plan…" : "No plans found"}
+                options={plans.map((plan) => ({
+                  value: plan.name,
+                  label: plan.name,
+                }))}
+              />
               <input
                 ref={uploadRef}
                 type="file"
