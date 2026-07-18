@@ -1,5 +1,6 @@
 "use client";
 
+import { ConnectionProvider } from "@/components/ConnectionProvider";
 import { PlanWorkspace } from "@/components/PlanWorkspace";
 import { UsageDashboard } from "@/components/UsageDashboard";
 
@@ -10,8 +11,10 @@ export default function Home() {
         <h1 className="text-xl font-semibold">spec-lens</h1>
       </header>
 
-      <UsageDashboard />
-      <PlanWorkspace />
+      <ConnectionProvider>
+        <UsageDashboard />
+        <PlanWorkspace />
+      </ConnectionProvider>
     </main>
   );
 }

@@ -91,6 +91,28 @@ export async function emailForConfigDir(configDir: string): Promise<string | nul
   return oauth?.emailAddress ?? null;
 }
 
+/**
+ * Locate a session for a headless `claude --resume`: the config dir
+ * (CLAUDE_CONFIG_DIR) that owns it and the project cwd it was created in
+ * (--resume only finds sessions from their original working directory).
+ */
+export async function sessionLocation(
+  email: string,
+  sessionId: string,
+): Promise<{ configDir: string; cwd: string | null } | null> {
+  const entry = (await accountsByEmail()).get(email);
+  if (!entry) return null;
+  for (const cfg of entry.dirs) {
+    const files = await transcriptFiles(cfg.projectsDir);
+    const match = files.find((f) => path.basename(f, ".jsonl") === sessionId);
+    if (match) {
+      const summarized = await summarize(match);
+      return { configDir: cfg.key, cwd: summarized?.summary.cwd ?? null };
+    }
+  }
+  return null;
+}
+
 const EMPTY_USAGE: UsageGauges = {
   fiveHour: null,
   sevenDay: null,

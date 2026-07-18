@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { RingGauge } from "@/components/RingGauge";
+import { useConnection } from "@/components/ConnectionProvider";
 import { cn } from "@/lib/utils";
-import type {
-  Account,
-  ChatDetail,
-  ChatSummary,
-  Provider,
-  UsageGauges,
-} from "@/lib/dashboard";
+import type { ChatDetail, Provider, UsageGauges } from "@/lib/dashboard";
 
 const PROVIDERS: { value: Provider; label: string }[] = [
   { value: "claude", label: "Claude" },
@@ -40,57 +35,30 @@ function untilReset(epoch: number | null): string | null {
 }
 
 export function UsageDashboard() {
-  const [provider, setProvider] = useState<Provider>("claude");
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountKey, setAccountKey] = useState<string>("");
-  const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [chatId, setChatId] = useState<string>("");
+  const {
+    provider,
+    setProvider,
+    providerAccounts,
+    accountKey,
+    setAccountKey,
+    chats,
+    chatId,
+    setChatId,
+  } = useConnection();
+
   const [chat, setChat] = useState<ChatDetail | null>(null);
   const [usage, setUsage] = useState<UsageGauges | null>(null);
 
-  const providerAccounts = useMemo(
-    () => accounts.filter((a) => a.provider === provider),
-    [accounts, provider],
-  );
-
-  // Load accounts once.
-  useEffect(() => {
-    getJSON<Account[]>("/api/accounts").then((a) => setAccounts(a ?? []));
-  }, []);
-
-  // When provider or account list changes, pick a sensible default account.
-  useEffect(() => {
-    const first = providerAccounts[0];
-    if (!first) {
-      setAccountKey("");
-      return;
-    }
-    if (!providerAccounts.some((a) => a.key === accountKey)) {
-      setAccountKey((providerAccounts.find((a) => a.active) ?? first).key);
-    }
-  }, [providerAccounts, accountKey]);
-
-  // Load chats + account usage when the selected account changes.
+  // Load account-level usage gauges when the account changes.
   useEffect(() => {
     if (!accountKey) {
-      setChats([]);
       setUsage(null);
       return;
     }
-    const q = `provider=${provider}&account=${encodeURIComponent(accountKey)}`;
-    getJSON<ChatSummary[]>(`/api/chats?${q}`).then((c) => setChats(c ?? []));
-    getJSON<UsageGauges>(`/api/usage?${q}`).then(setUsage);
+    getJSON<UsageGauges>(
+      `/api/usage?provider=${provider}&account=${encodeURIComponent(accountKey)}`,
+    ).then(setUsage);
   }, [provider, accountKey]);
-
-  // Default-select the most recent chat.
-  useEffect(() => {
-    const first = chats[0];
-    if (!first) {
-      setChatId("");
-      return;
-    }
-    if (!chats.some((c) => c.id === chatId)) setChatId(first.id);
-  }, [chats, chatId]);
 
   // Load chat detail (context %) when the selected chat changes.
   useEffect(() => {
