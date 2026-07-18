@@ -37,4 +37,6 @@ yarn-error.log*
 .DS_Store
 *.pem
 
-plans/
+# Plan documents (user data) live in the repo-root plans/ dir only.
+# Anchored so it doesn't also ignore app code dirs named "plans/".
+/plans/

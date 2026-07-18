@@ -1,7 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalEnv": ["CLAUDE_CONFIG_DIR"],
+  "globalEnv": ["CLAUDE_CONFIG_DIR", "SPEC_LENS_PLANS_DIR"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
