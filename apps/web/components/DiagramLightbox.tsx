@@ -68,10 +68,10 @@ export function DiagramLightbox({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Popup className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-xl border border-border bg-background shadow-lg outline-none">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-            <span className="text-sm text-muted-foreground">
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-foreground/25 backdrop-blur-md dark:bg-black/70" />
+        <Dialog.Popup className="fixed inset-3 z-50 flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl outline-none sm:inset-6">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-card/80 px-3 py-2.5 sm:px-4">
+            <span className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground tabular-nums">
               {Math.round(zoom * 100)}%
             </span>
             <div className="flex items-center gap-1">
@@ -106,7 +106,11 @@ export function DiagramLightbox({
             </div>
           </div>
 
-          <div ref={scrollRef} onWheel={onWheel} className="flex-1 overflow-auto p-4">
+          <div
+            ref={scrollRef}
+            onWheel={onWheel}
+            className="flex-1 overflow-auto bg-muted/20 p-4 sm:p-6"
+          >
             {/* Sizing box: occupies natural × zoom so overflow-auto shows real
                 scrollbars. The inner box stays at natural size and is visually
                 scaled by the transform to fill it. */}

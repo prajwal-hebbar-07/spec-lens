@@ -94,7 +94,7 @@ export function PlanViewer({
 
   return (
     <article
-      className="prose prose-neutral dark:prose-invert max-w-none"
+      className="plan-prose prose prose-neutral dark:prose-invert max-w-none leading-7"
       onMouseUp={onSelect ? handleMouseUp : undefined}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>

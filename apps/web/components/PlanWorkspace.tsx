@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageSquarePlus, Sparkles, Trash2, X } from "lucide-react";
+import { FileText, MessageSquare, MessageSquarePlus, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PlanViewer, type SelectionAnchor } from "@/components/PlanViewer";
 import { useConnection } from "@/components/ConnectionProvider";
@@ -145,69 +145,103 @@ export function PlanWorkspace() {
     resetPopover();
   }
 
-  const selectCls =
-    "h-9 rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
-
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
       <div className="min-w-0">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select className={selectCls} value={name} onChange={(e) => openPlan(e.target.value)}>
-            <option value="">{plans.length ? "Select a plan…" : "No plans found"}</option>
-            {plans.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <input
-            ref={uploadRef}
-            type="file"
-            accept=".md,.markdown"
-            className="hidden"
-            onChange={onUpload}
-          />
-          <Button variant="outline" size="sm" onClick={() => uploadRef.current?.click()}>
-            Upload…
-          </Button>
-          {content !== null && !annotatable && (
-            <span className="text-xs text-muted-foreground">
-              Uploaded file — open a plan from the list to add review comments
-            </span>
-          )}
-        </div>
+        <section className="surface overflow-hidden">
+          <div className="flex flex-col gap-4 border-b border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-5">
+            <div>
+              <div className="eyebrow mb-1.5 flex items-center gap-1.5">
+                <FileText className="size-3.5 text-primary" /> Plan reader
+              </div>
+              <h2 className="text-base font-semibold tracking-tight">
+                {name || (content !== null ? "Uploaded document" : "Choose a document")}
+              </h2>
+            </div>
 
-        {content === null ? (
-          <p className="text-muted-foreground">Pick a plan to view, review, and ask about it.</p>
-        ) : (
-          <PlanViewer markdown={content} onSelect={setAnchor} />
-        )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                aria-label="Select a plan"
+                className="field min-w-0 sm:w-64"
+                value={name}
+                onChange={(e) => openPlan(e.target.value)}
+              >
+                <option value="">{plans.length ? "Select a plan…" : "No plans found"}</option>
+                {plans.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                ref={uploadRef}
+                type="file"
+                accept=".md,.markdown"
+                className="hidden"
+                onChange={onUpload}
+              />
+              <Button variant="outline" onClick={() => uploadRef.current?.click()}>
+                <Upload /> Upload
+              </Button>
+            </div>
+          </div>
+
+          {content === null ? (
+            <div className="flex min-h-80 flex-col items-center justify-center px-6 py-14 text-center">
+              <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+                <FileText className="size-6" />
+              </div>
+              <h3 className="font-semibold">Bring a plan into focus</h3>
+              <p className="mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">
+                Open a plan from your workspace or upload a Markdown file to read, review, and discuss it.
+              </p>
+            </div>
+          ) : (
+            <div className="p-5 sm:p-8 lg:p-10">
+              {!annotatable && (
+                <div className="mb-6 rounded-xl border border-chart-3/30 bg-chart-3/10 px-4 py-3 text-sm text-muted-foreground">
+                  This uploaded copy is read-only. Open a workspace plan to add review comments.
+                </div>
+              )}
+              <PlanViewer markdown={content} onSelect={setAnchor} />
+            </div>
+          )}
+        </section>
 
         {/* Q&A panel */}
         {content !== null && (
-          <section className="mt-8 border-t border-border pt-5">
-            <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-              <Sparkles className="size-4" /> Ask the plan&apos;s chat
-            </h2>
-            <p className="mb-3 text-xs text-muted-foreground">
-              {chatId
-                ? `Answered by ${provider === "codex" ? "Codex" : "Claude"} · ${chatTitle ?? "selected chat"}`
-                : "Select an account and chat in the dashboard above, then ask."}
-            </p>
+          <section className="surface mt-6 p-4 sm:p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Sparkles className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold">Ask the plan&apos;s chat</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {chatId
+                    ? `Answered by ${provider === "codex" ? "Codex" : "Claude"} · ${chatTitle ?? "selected chat"}`
+                    : "Select an account and conversation above, then ask."}
+                </p>
+              </div>
+            </div>
 
             <div className="flex flex-col gap-3">
               {thread.map((qa) => (
-                <div key={qa.id} className="rounded-lg border border-border bg-card p-3">
+                <div key={qa.id} className="rounded-xl border border-border/70 bg-muted/25 p-4">
                   <div className="mb-1 text-sm font-medium">{qa.question}</div>
                   {qa.selection && (
-                    <blockquote className="mb-2 border-l-2 border-border pl-2 text-xs text-muted-foreground">
+                    <blockquote className="mb-3 mt-2 rounded-r-lg border-l-2 border-chart-2 bg-accent/20 py-2 pr-2 pl-3 text-xs text-muted-foreground">
                       {qa.selection.length > 160 ? qa.selection.slice(0, 160) + "…" : qa.selection}
                     </blockquote>
                   )}
-                  {qa.pending && <div className="text-sm text-muted-foreground">Thinking…</div>}
+                  {qa.pending && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="size-1.5 animate-pulse rounded-full bg-primary" /> Thinking…
+                    </div>
+                  )}
                   {qa.error && <div className="text-sm text-destructive">{qa.error}</div>}
                   {qa.answer && (
-                    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
+                    <div className="plan-prose prose prose-sm max-w-none">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.answer}</ReactMarkdown>
                     </div>
                   )}
@@ -216,7 +250,7 @@ export function PlanWorkspace() {
             </div>
 
             <form
-              className="mt-3 flex gap-2"
+              className="mt-4 flex flex-col gap-2 sm:flex-row"
               onSubmit={(e) => {
                 e.preventDefault();
                 ask(generalQ);
@@ -224,13 +258,13 @@ export function PlanWorkspace() {
               }}
             >
               <input
-                className={`${selectCls} flex-1`}
+                className="field flex-1"
                 value={generalQ}
                 onChange={(e) => setGeneralQ(e.target.value)}
                 placeholder="Ask a question about this plan…"
               />
-              <Button type="submit" size="sm" disabled={!generalQ.trim()}>
-                Ask
+              <Button type="submit" disabled={!generalQ.trim()}>
+                <Sparkles /> Ask
               </Button>
             </form>
           </section>
@@ -238,34 +272,42 @@ export function PlanWorkspace() {
       </div>
 
       {/* Review comments sidebar */}
-      <aside className="lg:sticky lg:top-6 lg:self-start">
-        <h2 className="mb-2 text-sm font-semibold">
-          Review comments{comments.length > 0 && ` (${comments.length})`}
-        </h2>
+      <aside className="surface p-4 lg:sticky lg:top-6 lg:self-start">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="size-4 text-primary" />
+            <h2 className="text-sm font-semibold">Review comments</h2>
+          </div>
+          {comments.length > 0 && (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+              {comments.length}
+            </span>
+          )}
+        </div>
         {!annotatable ? (
-          <p className="text-xs text-muted-foreground">
-            Open a plan from the list, then select text to leave an <code>@me</code> comment for{" "}
+          <div className="rounded-xl bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
+            Open a workspace plan, then select text to leave an <code>@me</code> note for{" "}
             <code>/plan-review</code>.
-          </p>
+          </div>
         ) : comments.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No comments yet. Select any text in the plan to add one.
-          </p>
+          <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs leading-5 text-muted-foreground">
+            Select any text in the plan to add your first comment.
+          </div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-2.5">
             {comments.map((c) => (
-              <li key={c.offset} className="rounded-lg border border-border bg-card p-2.5 text-sm">
+              <li key={c.offset} className="rounded-xl border border-border/70 bg-muted/25 p-3 text-sm">
                 {c.anchor && (
-                  <div className="mb-1 truncate text-xs text-muted-foreground">…{c.anchor}</div>
+                  <div className="mb-1.5 truncate text-xs text-muted-foreground">…{c.anchor}</div>
                 )}
                 <div className="flex items-start justify-between gap-2">
-                  <span>{c.text}</span>
+                  <span className="leading-5">{c.text}</span>
                   <button
                     type="button"
                     onClick={() => removeComment(c.offset, c.marker)}
                     disabled={busy}
                     aria-label="Remove comment"
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    className="shrink-0 rounded-lg p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -279,24 +321,24 @@ export function PlanWorkspace() {
       {/* Floating popover anchored to the selection: comment or ask */}
       {anchor && (
         <div
-          className="fixed z-50 w-72 rounded-xl border border-border bg-popover p-3 shadow-lg"
+          className="fixed z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-popover p-4 shadow-2xl shadow-foreground/10"
           style={{
             top: Math.min(anchor.rect.bottom + 8, window.innerHeight - 220),
             left: Math.min(anchor.rect.left, window.innerWidth - 300),
           }}
         >
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Selected text</span>
+            <span className="eyebrow">Selected text</span>
             <button
               type="button"
               onClick={resetPopover}
               aria-label="Cancel"
-              className="text-muted-foreground hover:text-foreground"
+              className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
             >
               <X className="size-3.5" />
             </button>
           </div>
-          <blockquote className="mb-2 max-h-16 overflow-hidden border-l-2 border-border pl-2 text-xs text-muted-foreground">
+          <blockquote className="mb-3 max-h-16 overflow-hidden rounded-r-lg border-l-2 border-chart-2 bg-accent/20 py-2 pr-2 pl-3 text-xs text-muted-foreground">
             {anchor.quote.length > 120 ? anchor.quote.slice(0, 120) + "…" : anchor.quote}
           </blockquote>
           <textarea
@@ -304,15 +346,15 @@ export function PlanWorkspace() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Add a review comment, or ask the chat about this…"
-            className="mb-2 h-20 w-full resize-none rounded-lg border border-border bg-background p-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="mb-3 h-24 w-full resize-none rounded-xl border border-input bg-background/70 p-3 text-sm shadow-inner outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
           />
           <div className="flex justify-end gap-2">
             {annotatable && (
-              <Button variant="outline" size="sm" onClick={addComment} disabled={busy || !draft.trim()}>
+              <Button variant="outline" onClick={addComment} disabled={busy || !draft.trim()}>
                 <MessageSquarePlus className="size-3.5" /> Comment
               </Button>
             )}
-            <Button size="sm" onClick={askFromSelection} disabled={!draft.trim()}>
+            <Button onClick={askFromSelection} disabled={!draft.trim()}>
               <Sparkles className="size-3.5" /> Ask
             </Button>
           </div>
