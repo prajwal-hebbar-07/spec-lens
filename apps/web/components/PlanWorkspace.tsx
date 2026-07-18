@@ -40,6 +40,8 @@ export function PlanWorkspace() {
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState<{ text: string; error?: boolean } | null>(null);
   const [thread, setThread] = useState<QA[]>([]);
   const [generalQ, setGeneralQ] = useState("");
   const [askOpen, setAskOpen] = useState(false);
@@ -55,6 +57,7 @@ export function PlanWorkspace() {
 
   async function openPlan(planName: string) {
     setAnchor(null);
+    setReviewStatus(null);
     setName(planName);
     if (!planName) {
       setContent(null);
@@ -101,6 +104,42 @@ export function PlanWorkspace() {
     });
     setBusy(false);
     if (data) setContent(data.content);
+  }
+
+  async function runReview() {
+    if (!name || comments.length === 0) return;
+    if (!chatId) {
+      setReviewStatus({ text: "Select the chat that produced this plan first.", error: true });
+      return;
+    }
+    setReviewing(true);
+    setReviewStatus(null);
+    try {
+      const response = await fetch(`/api/plans/${encodeURIComponent(name)}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, account: accountKey, chatId }),
+      });
+      const result = (await response.json()) as {
+        content?: string;
+        remainingComments?: number;
+        error?: string;
+      };
+      if (typeof result.content === "string") setContent(result.content);
+      if (!response.ok) {
+        setReviewStatus({ text: result.error ?? "The review failed.", error: true });
+      } else if (result.remainingComments) {
+        setReviewStatus({ text: `Review finished with ${result.remainingComments} comment(s) remaining.` });
+      } else {
+        setReviewStatus({
+          text: `Review complete with ${provider === "claude" ? "Claude" : "Codex"}. All comments were resolved.`,
+        });
+      }
+    } catch {
+      setReviewStatus({ text: "Could not start the review.", error: true });
+    } finally {
+      setReviewing(false);
+    }
   }
 
   function resetPopover() {
@@ -230,12 +269,27 @@ export function PlanWorkspace() {
               <MessageSquare className="size-4 text-primary" />
               <h2 className="text-sm font-semibold">Review comments</h2>
             </div>
-            {comments.length > 0 && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                {comments.length}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {comments.length > 0 && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                  {comments.length}
+                </span>
+              )}
+              {annotatable && comments.length > 0 && (
+                <Button size="sm" onClick={runReview} disabled={reviewing || !chatId}>
+                  <Sparkles /> {reviewing ? "Reviewing…" : `Run with ${provider === "claude" ? "Claude" : "Codex"}`}
+                </Button>
+              )}
+            </div>
           </div>
+          {reviewStatus && (
+            <div
+              role="status"
+              className={`mb-4 rounded-lg px-3 py-2 text-xs ${reviewStatus.error ? "bg-destructive/10 text-destructive" : "bg-accent/40 text-accent-foreground"}`}
+            >
+              {reviewStatus.text}
+            </div>
+          )}
           {!annotatable ? (
             <div className="rounded-xl bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
               Open a workspace plan, then select text to leave an <code>@me</code> note for{" "}

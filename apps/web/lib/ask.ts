@@ -20,7 +20,7 @@ export interface AskInput {
 
 export type AskResult = { answer: string } | { error: string };
 
-interface RunResult {
+export interface RunResult {
   stdout: string;
   stderr: string;
   code: number | null;
@@ -28,7 +28,7 @@ interface RunResult {
 }
 
 /** Run a CLI with stdin closed (so it never blocks waiting for piped input). */
-function run(
+export function runCli(
   bin: string,
   args: string[],
   opts: { env?: NodeJS.ProcessEnv; cwd?: string },
@@ -99,7 +99,7 @@ async function askClaude(email: string, chatId: string, prompt: string): Promise
   const loc = await sessionLocation(email, chatId);
   if (!loc) return { error: "Could not locate that chat's Claude session." };
   try {
-    const res = await run(
+    const res = await runCli(
       CLAUDE_BIN,
       [
         "--print",
@@ -151,7 +151,7 @@ function parseCodexAnswer(stdout: string): string {
 /** Resume the Codex session read-only (Codex has no fork; this appends a turn). */
 async function askCodex(chatId: string, prompt: string): Promise<AskResult> {
   try {
-    const res = await run(
+    const res = await runCli(
       CODEX_BIN,
       [
         "exec",

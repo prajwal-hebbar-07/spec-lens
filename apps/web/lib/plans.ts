@@ -1,5 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { runCli } from "@/lib/ask";
+import { sessionLocation } from "@/lib/claude";
+import type { Provider } from "@/lib/dashboard";
+
+const CLAUDE_BIN = process.env.SPEC_LENS_CLAUDE_BIN ?? "claude";
+const CODEX_BIN = process.env.SPEC_LENS_CODEX_BIN ?? "codex";
 
 /**
  * Directory holding plan markdown files. Defaults to the repo's `plans/` dir
@@ -48,6 +54,80 @@ export async function writePlan(name: string, content: string): Promise<boolean>
   const full = resolvePlanPath(name);
   if (!full) return false;
   return fs.writeFile(full, content).then(() => true).catch(() => false);
+}
+
+export type ReviewResult =
+  | { content: string; remainingComments: number }
+  | { error: string };
+
+export interface ReviewInput {
+  name: string;
+  provider: Provider;
+  account: string;
+  chatId: string;
+}
+
+/** Resolve comments using the provider session selected for this plan. */
+export async function reviewPlan(input: ReviewInput): Promise<ReviewResult> {
+  const full = resolvePlanPath(input.name);
+  if (!full || !(await fs.stat(full).catch(() => null))) return { error: "plan not found" };
+
+  const prompt = `Use the plan-review skill to resolve every inline @me review comment in ${JSON.stringify(full)}. Only edit that plan document; do not implement code changes.`;
+  const location = input.provider === "claude"
+    ? await sessionLocation(input.account, input.chatId)
+    : null;
+  if (input.provider === "claude" && !location) {
+    return { error: "Could not locate that chat's Claude session." };
+  }
+
+  const result = await runCli(
+    input.provider === "claude" ? CLAUDE_BIN : CODEX_BIN,
+    input.provider === "claude"
+      ? [
+          "--print",
+          "--resume",
+          input.chatId,
+          "--fork-session",
+          "--permission-mode",
+          "acceptEdits",
+          "--add-dir",
+          plansDir(),
+          "--output-format",
+          "text",
+          prompt,
+        ]
+      : [
+          "exec",
+          "resume",
+          "--all",
+          "--skip-git-repo-check",
+          "-c",
+          'sandbox_mode="workspace-write"',
+          "-c",
+          'approval_policy="never"',
+          input.chatId,
+          prompt,
+        ],
+    input.provider === "claude"
+      ? {
+          env: { ...process.env, CLAUDE_CONFIG_DIR: location!.configDir },
+          cwd: location!.cwd ?? plansDir(),
+        }
+      : { cwd: plansDir() },
+  ).catch((error: Error) => ({ error: error.message }));
+
+  if ("error" in result) return { error: result.error.slice(0, 500) };
+  if (result.timedOut) return { error: "The review timed out." };
+  if (result.code !== 0) {
+    return { error: (result.stderr || `Codex exited with code ${result.code}`).trim().slice(0, 500) };
+  }
+
+  const content = await fs.readFile(full, "utf8").catch(() => null);
+  if (content == null) return { error: "Could not reload the reviewed plan." };
+  return {
+    content,
+    remainingComments: content.match(/<!--\s*@me:/gi)?.length ?? 0,
+  };
 }
 
 /** Make comment text safe to embed inside an HTML comment on a single line. */

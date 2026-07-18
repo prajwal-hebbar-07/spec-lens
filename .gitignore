@@ -38,5 +38,6 @@ yarn-error.log*
 *.pem
 
 # Plan documents (user data) live in the repo-root plans/ dir only.
-# Anchored so it doesn't also ignore app code dirs named "plans/".
-/plans/
+# Keep the built-in review exercise while ignoring user-created plans.
+/plans/*
+!/plans/review-demo.md
