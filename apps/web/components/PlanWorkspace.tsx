@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FileText, MessageSquare, MessageSquarePlus, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
+import {
+  FileText,
+  MessageSquare,
+  MessageSquarePlus,
+  Plus,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { PlanViewer, type SelectionAnchor } from "@/components/PlanViewer";
@@ -35,25 +44,50 @@ export function PlanWorkspace() {
   const { provider, accountKey, chatId, chatTitle } = useConnection();
 
   const [plans, setPlans] = useState<PlanFile[]>([]);
-  const [name, setName] = useState<string>(""); // disk-backed plan name, "" if uploaded
+  const [name, setName] = useState<string>("");
   const [content, setContent] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [reviewing, setReviewing] = useState(false);
-  const [reviewStatus, setReviewStatus] = useState<{ text: string; error?: boolean } | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<{
+    text: string;
+    error?: boolean;
+  } | null>(null);
   const [thread, setThread] = useState<QA[]>([]);
   const [generalQ, setGeneralQ] = useState("");
   const [askOpen, setAskOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const qaId = useRef(0);
 
-  const comments = useMemo(() => (content ? parsePlanComments(content) : []), [content]);
+  const comments = useMemo(
+    () => (content ? parsePlanComments(content) : []),
+    [content],
+  );
   const annotatable = name !== "" && content !== null;
+  const planQuery = useMemo(
+    () =>
+      new URLSearchParams({ provider, account: accountKey, chatId }).toString(),
+    [provider, accountKey, chatId],
+  );
 
   useEffect(() => {
-    getJSON<PlanFile[]>("/api/plans").then((p) => setPlans(p ?? []));
-  }, []);
+    setName("");
+    setContent(null);
+    setPlans([]);
+    setAnchor(null);
+    setReviewStatus(null);
+    if (!chatId) {
+      return;
+    }
+    let current = true;
+    getJSON<PlanFile[]>(`/api/plans?${planQuery}`).then((p) => {
+      if (current) setPlans(p ?? []);
+    });
+    return () => {
+      current = false;
+    };
+  }, [chatId, planQuery]);
 
   async function openPlan(planName: string) {
     setAnchor(null);
@@ -63,16 +97,51 @@ export function PlanWorkspace() {
       setContent(null);
       return;
     }
-    const data = await getJSON<{ content: string }>(`/api/plans/${encodeURIComponent(planName)}`);
+    const data = await getJSON<{ content: string }>(
+      `/api/plans/${encodeURIComponent(planName)}?${planQuery}`,
+    );
     setContent(data?.content ?? null);
   }
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setName("");
+    e.target.value = "";
+    if (!chatId) {
+      setReviewStatus({
+        text: "Select the plan's chat before importing a file.",
+        error: true,
+      });
+      return;
+    }
+    setBusy(true);
     setAnchor(null);
-    setContent(await file.text());
+    try {
+      const fileContent = await file.text();
+      const response = await fetch(`/api/plans?${planQuery}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, content: fileContent }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setReviewStatus({
+          text: data.error ?? "Could not import the plan.",
+          error: true,
+        });
+        return;
+      }
+      setName(file.name);
+      setContent(fileContent);
+      setReviewStatus({
+        text: `Imported ${file.name} into this chat's workspace.`,
+      });
+      setPlans((await getJSON<PlanFile[]>(`/api/plans?${planQuery}`)) ?? []);
+    } catch {
+      setReviewStatus({ text: "Could not import the plan.", error: true });
+    } finally {
+      setBusy(false);
+    }
   }
 
   // --- review comments -----------------------------------------------------
@@ -80,11 +149,17 @@ export function PlanWorkspace() {
   async function addComment() {
     if (!anchor || !draft.trim() || !name) return;
     setBusy(true);
-    const data = await getJSON<{ content: string }>(`/api/plans/${encodeURIComponent(name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ insertOffset: anchor.insertOffset, comment: draft.trim() }),
-    });
+    const data = await getJSON<{ content: string }>(
+      `/api/plans/${encodeURIComponent(name)}?${planQuery}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          insertOffset: anchor.insertOffset,
+          comment: draft.trim(),
+        }),
+      },
+    );
     setBusy(false);
     if (data) {
       setContent(data.content);
@@ -95,13 +170,17 @@ export function PlanWorkspace() {
   async function removeComment(offset: number, marker: string) {
     if (!content || !name) return;
     const start = content[offset - 1] === " " ? offset - 1 : offset;
-    const next = content.slice(0, start) + content.slice(offset + marker.length);
+    const next =
+      content.slice(0, start) + content.slice(offset + marker.length);
     setBusy(true);
-    const data = await getJSON<{ content: string }>(`/api/plans/${encodeURIComponent(name)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: next }),
-    });
+    const data = await getJSON<{ content: string }>(
+      `/api/plans/${encodeURIComponent(name)}?${planQuery}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: next }),
+      },
+    );
     setBusy(false);
     if (data) setContent(data.content);
   }
@@ -109,17 +188,23 @@ export function PlanWorkspace() {
   async function runReview() {
     if (!name || comments.length === 0) return;
     if (!chatId) {
-      setReviewStatus({ text: "Select the chat that produced this plan first.", error: true });
+      setReviewStatus({
+        text: "Select the chat that produced this plan first.",
+        error: true,
+      });
       return;
     }
     setReviewing(true);
     setReviewStatus(null);
     try {
-      const response = await fetch(`/api/plans/${encodeURIComponent(name)}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, account: accountKey, chatId }),
-      });
+      const response = await fetch(
+        `/api/plans/${encodeURIComponent(name)}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, account: accountKey, chatId }),
+        },
+      );
       const result = (await response.json()) as {
         content?: string;
         remainingComments?: number;
@@ -127,9 +212,14 @@ export function PlanWorkspace() {
       };
       if (typeof result.content === "string") setContent(result.content);
       if (!response.ok) {
-        setReviewStatus({ text: result.error ?? "The review failed.", error: true });
+        setReviewStatus({
+          text: result.error ?? "The review failed.",
+          error: true,
+        });
       } else if (result.remainingComments) {
-        setReviewStatus({ text: `Review finished with ${result.remainingComments} comment(s) remaining.` });
+        setReviewStatus({
+          text: `Review finished with ${result.remainingComments} comment(s) remaining.`,
+        });
       } else {
         setReviewStatus({
           text: `Review complete with ${provider === "claude" ? "Claude" : "Codex"}. All comments were resolved.`,
@@ -157,7 +247,13 @@ export function PlanWorkspace() {
     if (!chatId) {
       setThread((t) => [
         ...t,
-        { id, question: q, selection, pending: false, error: "Select a chat in the dashboard first." },
+        {
+          id,
+          question: q,
+          selection,
+          pending: false,
+          error: "Select a chat in the dashboard first.",
+        },
       ]);
       return;
     }
@@ -165,7 +261,13 @@ export function PlanWorkspace() {
     const res = await getJSON<{ answer?: string; error?: string }>("/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, account: accountKey, chatId, question: q, selection }),
+      body: JSON.stringify({
+        provider,
+        account: accountKey,
+        chatId,
+        question: q,
+        selection,
+      }),
     });
     setThread((t) =>
       t.map((item) =>
@@ -174,7 +276,9 @@ export function PlanWorkspace() {
               ...item,
               pending: false,
               answer: res?.answer,
-              error: res?.answer ? undefined : (res?.error ?? "The request failed."),
+              error: res?.answer
+                ? undefined
+                : (res?.error ?? "The request failed."),
             }
           : item,
       ),
@@ -204,7 +308,10 @@ export function PlanWorkspace() {
                   <FileText className="size-3.5 text-primary" /> Plan reader
                 </div>
                 <h2 className="text-base font-semibold tracking-tight">
-                  {name || (content !== null ? "Uploaded document" : "Choose a document")}
+                  {name ||
+                    (content !== null
+                      ? "Uploaded document"
+                      : "Choose a document")}
                 </h2>
               </div>
 
@@ -215,7 +322,9 @@ export function PlanWorkspace() {
                   value={name}
                   onValueChange={openPlan}
                   disabled={plans.length === 0}
-                  placeholder={plans.length ? "Select a plan…" : "No plans found"}
+                  placeholder={
+                    plans.length ? "Select a plan…" : "No plans found"
+                  }
                   options={plans.map((plan) => ({
                     value: plan.name,
                     label: plan.name,
@@ -228,11 +337,17 @@ export function PlanWorkspace() {
                   className="hidden"
                   onChange={onUpload}
                 />
-                <Button variant="outline" onClick={() => uploadRef.current?.click()}>
+                <Button
+                  variant="outline"
+                  onClick={() => uploadRef.current?.click()}
+                  disabled={busy || !chatId}
+                >
                   <Upload /> Upload
                 </Button>
                 {content !== null && (
-                  <Dialog.Trigger className={buttonVariants({ variant: "outline" })}>
+                  <Dialog.Trigger
+                    className={buttonVariants({ variant: "outline" })}
+                  >
                     <Sparkles /> Ask chat
                   </Dialog.Trigger>
                 )}
@@ -246,16 +361,12 @@ export function PlanWorkspace() {
                 </div>
                 <h3 className="font-semibold">Bring a plan into focus</h3>
                 <p className="mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">
-                  Open a plan from your workspace or upload a Markdown file to read, review, and discuss it.
+                  Open a plan from your workspace or upload a Markdown file to
+                  read, review, and discuss it.
                 </p>
               </div>
             ) : (
               <div className="p-5 sm:p-8 lg:p-10">
-                {!annotatable && (
-                  <div className="mb-6 rounded-xl border border-chart-3/30 bg-chart-3/10 px-4 py-3 text-sm text-muted-foreground">
-                    This uploaded copy is read-only. Open a workspace plan to add review comments.
-                  </div>
-                )}
                 <PlanViewer markdown={content} onSelect={setAnchor} />
               </div>
             )}
@@ -276,8 +387,15 @@ export function PlanWorkspace() {
                 </span>
               )}
               {annotatable && comments.length > 0 && (
-                <Button size="sm" onClick={runReview} disabled={reviewing || !chatId}>
-                  <Sparkles /> {reviewing ? "Reviewing…" : `Run with ${provider === "claude" ? "Claude" : "Codex"}`}
+                <Button
+                  size="sm"
+                  onClick={runReview}
+                  disabled={reviewing || !chatId}
+                >
+                  <Sparkles />{" "}
+                  {reviewing
+                    ? "Reviewing…"
+                    : `Run with ${provider === "claude" ? "Claude" : "Codex"}`}
                 </Button>
               )}
             </div>
@@ -292,8 +410,8 @@ export function PlanWorkspace() {
           )}
           {!annotatable ? (
             <div className="rounded-xl bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
-              Open a workspace plan, then select text to leave an <code>@me</code> note for{" "}
-              <code>/plan-review</code>.
+              Select a chat, then open or upload a plan to leave an{" "}
+              <code>@me</code> note for <code>/plan-review</code>.
             </div>
           ) : comments.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs leading-5 text-muted-foreground">
@@ -302,9 +420,14 @@ export function PlanWorkspace() {
           ) : (
             <ul className="flex flex-col gap-2.5">
               {comments.map((c) => (
-                <li key={c.offset} className="rounded-xl border border-border/70 bg-muted/25 p-3 text-sm">
+                <li
+                  key={c.offset}
+                  className="rounded-xl border border-border/70 bg-muted/25 p-3 text-sm"
+                >
                   {c.anchor && (
-                    <div className="mb-1.5 truncate text-xs text-muted-foreground">…{c.anchor}</div>
+                    <div className="mb-1.5 truncate text-xs text-muted-foreground">
+                      …{c.anchor}
+                    </div>
                   )}
                   <div className="flex items-start justify-between gap-2">
                     <span className="leading-5">{c.text}</span>
@@ -327,10 +450,14 @@ export function PlanWorkspace() {
         {/* Floating popover anchored to the selection: comment or ask */}
         {anchor && (
           <div
-            className="fixed z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-popover p-4 shadow-2xl shadow-foreground/10"
+            className="fixed z-50 w-[min(20rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-4 shadow-2xl shadow-foreground/10"
             style={{
               top: Math.min(anchor.rect.bottom + 8, window.innerHeight - 220),
               left: Math.min(anchor.rect.left, window.innerWidth - 300),
+              maxHeight: Math.max(
+                204,
+                window.innerHeight - anchor.rect.bottom - 24,
+              ),
             }}
           >
             <div className="mb-2 flex items-center justify-between">
@@ -345,7 +472,9 @@ export function PlanWorkspace() {
               </button>
             </div>
             <blockquote className="mb-3 max-h-16 overflow-hidden rounded-r-lg border-l-2 border-chart-2 bg-accent/20 py-2 pr-2 pl-3 text-xs text-muted-foreground">
-              {anchor.quote.length > 120 ? anchor.quote.slice(0, 120) + "…" : anchor.quote}
+              {anchor.quote.length > 120
+                ? anchor.quote.slice(0, 120) + "…"
+                : anchor.quote}
             </blockquote>
             <textarea
               autoFocus
@@ -356,7 +485,11 @@ export function PlanWorkspace() {
             />
             <div className="flex justify-end gap-2">
               {annotatable && (
-                <Button variant="outline" onClick={addComment} disabled={busy || !draft.trim()}>
+                <Button
+                  variant="outline"
+                  onClick={addComment}
+                  disabled={busy || !draft.trim()}
+                >
                   <MessageSquarePlus className="size-3.5" /> Comment
                 </Button>
               )}
@@ -376,7 +509,9 @@ export function PlanWorkspace() {
                   <Sparkles className="size-4" />
                 </div>
                 <div>
-                  <Dialog.Title className="text-sm font-semibold">Ask the plan&apos;s chat</Dialog.Title>
+                  <Dialog.Title className="text-sm font-semibold">
+                    Ask the plan&apos;s chat
+                  </Dialog.Title>
                   <Dialog.Description className="mt-0.5 text-xs leading-5 text-muted-foreground">
                     {chatId
                       ? `Answered by ${provider === "codex" ? "Codex" : "Claude"} · ${chatTitle ?? "selected chat"}`
@@ -385,7 +520,12 @@ export function PlanWorkspace() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" onClick={startNewChat} disabled={thread.length === 0 && !generalQ}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={startNewChat}
+                  disabled={thread.length === 0 && !generalQ}
+                >
                   <Plus /> New chat
                 </Button>
                 <Dialog.Close
@@ -400,26 +540,37 @@ export function PlanWorkspace() {
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 sm:p-5">
               {thread.length === 0 && (
                 <div className="m-auto max-w-xs text-center text-sm leading-6 text-muted-foreground">
-                  Ask a question about the plan or select text in the document and ask about that passage.
+                  Ask a question about the plan or select text in the document
+                  and ask about that passage.
                 </div>
               )}
               {thread.map((qa) => (
-                <div key={qa.id} className="rounded-xl border border-border/70 bg-muted/25 p-4">
+                <div
+                  key={qa.id}
+                  className="rounded-xl border border-border/70 bg-muted/25 p-4"
+                >
                   <div className="mb-1 text-sm font-medium">{qa.question}</div>
                   {qa.selection && (
                     <blockquote className="mb-3 mt-2 rounded-r-lg border-l-2 border-chart-2 bg-accent/20 py-2 pr-2 pl-3 text-xs text-muted-foreground">
-                      {qa.selection.length > 160 ? qa.selection.slice(0, 160) + "…" : qa.selection}
+                      {qa.selection.length > 160
+                        ? qa.selection.slice(0, 160) + "…"
+                        : qa.selection}
                     </blockquote>
                   )}
                   {qa.pending && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="size-1.5 animate-pulse rounded-full bg-primary" /> Thinking…
+                      <span className="size-1.5 animate-pulse rounded-full bg-primary" />{" "}
+                      Thinking…
                     </div>
                   )}
-                  {qa.error && <div className="text-sm text-destructive">{qa.error}</div>}
+                  {qa.error && (
+                    <div className="text-sm text-destructive">{qa.error}</div>
+                  )}
                   {qa.answer && (
-                    <div className="plan-prose prose prose-sm max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.answer}</ReactMarkdown>
+                    <div className="plan-prose prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {qa.answer}
+                      </ReactMarkdown>
                     </div>
                   )}
                 </div>

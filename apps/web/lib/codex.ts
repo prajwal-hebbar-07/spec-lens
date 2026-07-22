@@ -17,9 +17,10 @@ function decodeJwt(token: string): Record<string, unknown> | null {
   const part = token.split(".")[1];
   if (!part) return null;
   try {
-    const json = Buffer.from(part.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString(
-      "utf8",
-    );
+    const json = Buffer.from(
+      part.replace(/-/g, "+").replace(/_/g, "/"),
+      "base64",
+    ).toString("utf8");
     return JSON.parse(json);
   } catch {
     return null;
@@ -28,10 +29,14 @@ function decodeJwt(token: string): Record<string, unknown> | null {
 
 export async function listAccounts(): Promise<Account[]> {
   try {
-    const auth = JSON.parse(await fs.readFile(path.join(CODEX_HOME, "auth.json"), "utf8")) as {
+    const auth = JSON.parse(
+      await fs.readFile(path.join(CODEX_HOME, "auth.json"), "utf8"),
+    ) as {
       tokens?: { id_token?: string };
     };
-    const claims = auth.tokens?.id_token ? decodeJwt(auth.tokens.id_token) : null;
+    const claims = auth.tokens?.id_token
+      ? decodeJwt(auth.tokens.id_token)
+      : null;
     if (!claims?.email) return [];
     return [
       {
@@ -56,12 +61,19 @@ export async function listChats(limit = 60): Promise<ChatSummary[]> {
       .filter((l) => l.trim())
       .map((l) => {
         try {
-          return JSON.parse(l) as { id?: string; thread_name?: string; updated_at?: string };
+          return JSON.parse(l) as {
+            id?: string;
+            thread_name?: string;
+            updated_at?: string;
+          };
         } catch {
           return null;
         }
       })
-      .filter((r): r is { id: string; thread_name?: string; updated_at?: string } => !!r?.id);
+      .filter(
+        (r): r is { id: string; thread_name?: string; updated_at?: string } =>
+          !!r?.id,
+      );
 
     return rows
       .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
@@ -90,8 +102,16 @@ export async function getChatDetail(id: string): Promise<ChatDetail | null> {
   const usedTokens = info?.usedTokens ?? null;
   const contextWindow = info?.contextWindow ?? null;
   const contextPct =
-    usedTokens != null && contextWindow ? Math.min(100, (usedTokens / contextWindow) * 100) : null;
-  return { ...summary, contextPct, usedTokens, contextWindow };
+    usedTokens != null && contextWindow
+      ? Math.min(100, (usedTokens / contextWindow) * 100)
+      : null;
+  return {
+    ...summary,
+    cwd: await rolloutCwd(file),
+    contextPct,
+    usedTokens,
+    contextWindow,
+  };
 }
 
 /** Codex embeds rate limits in each token_count event, so no bridge is needed. */
@@ -114,7 +134,9 @@ export async function getUsage(): Promise<UsageGauges> {
 async function allRollouts(): Promise<{ file: string; mtime: number }[]> {
   const out: { file: string; mtime: number }[] = [];
   async function walk(dir: string) {
-    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await fs
+      .readdir(dir, { withFileTypes: true })
+      .catch(() => []);
     for (const e of entries) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) await walk(full);
@@ -128,7 +150,10 @@ async function allRollouts(): Promise<{ file: string; mtime: number }[]> {
   return out;
 }
 
-async function newestRollout(): Promise<{ file: string; mtime: number } | null> {
+async function newestRollout(): Promise<{
+  file: string;
+  mtime: number;
+} | null> {
   const rollouts = await allRollouts();
   return rollouts.sort((a, b) => b.mtime - a.mtime)[0] ?? null;
 }
@@ -137,6 +162,31 @@ async function newestRollout(): Promise<{ file: string; mtime: number } | null> 
 async function findRollout(id: string): Promise<string | null> {
   const rollouts = await allRollouts();
   return rollouts.find((r) => r.file.includes(id))?.file ?? null;
+}
+
+export function sessionCwd(raw: string): string | null {
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as {
+        type?: string;
+        payload?: { cwd?: unknown };
+      };
+      if (row.type === "session_meta" && typeof row.payload?.cwd === "string") {
+        return row.payload.cwd;
+      }
+    } catch {
+      // Ignore partial/corrupt transcript lines.
+    }
+  }
+  return null;
+}
+
+async function rolloutCwd(file: string): Promise<string | null> {
+  return fs
+    .readFile(file, "utf8")
+    .then(sessionCwd)
+    .catch(() => null);
 }
 
 interface TokenInfo {
@@ -159,16 +209,27 @@ async function latestTokenInfo(file: string): Promise<TokenInfo | null> {
     if (!line || !line.trim()) continue;
     let o: {
       type?: string;
-      payload?: { type?: string; info?: RolloutInfo; rate_limits?: RolloutRateLimits };
+      payload?: {
+        type?: string;
+        info?: RolloutInfo;
+        rate_limits?: RolloutRateLimits;
+      };
     };
     try {
       o = JSON.parse(line);
     } catch {
       continue;
     }
-    if (o.type === "event_msg" && o.payload?.type === "token_count" && o.payload.info) {
+    if (
+      o.type === "event_msg" &&
+      o.payload?.type === "token_count" &&
+      o.payload.info
+    ) {
       const info = o.payload.info;
-      const used = info.last_token_usage?.input_tokens ?? info.total_token_usage?.input_tokens ?? 0;
+      const used =
+        info.last_token_usage?.input_tokens ??
+        info.total_token_usage?.input_tokens ??
+        0;
       return {
         usedTokens: used,
         contextWindow: info.model_context_window ?? null,

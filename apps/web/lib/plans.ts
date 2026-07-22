@@ -1,18 +1,28 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { runCli } from "@/lib/ask";
-import { sessionLocation } from "@/lib/claude";
+import * as codex from "@/lib/codex";
+import * as claude from "@/lib/claude";
 import type { Provider } from "@/lib/dashboard";
 
 const CLAUDE_BIN = process.env.SPEC_LENS_CLAUDE_BIN ?? "claude";
 const CODEX_BIN = process.env.SPEC_LENS_CODEX_BIN ?? "codex";
 
-/**
- * Directory holding plan markdown files. Defaults to the repo's `plans/` dir
- * (two levels up from the Next.js app's cwd); override with SPEC_LENS_PLANS_DIR.
- */
-export function plansDir(): string {
-  return process.env.SPEC_LENS_PLANS_DIR ?? path.resolve(process.cwd(), "..", "..", "plans");
+export interface PlanContext {
+  provider: Provider;
+  account: string;
+  chatId: string;
+}
+
+/** The selected chat's `<workspace>/plans`, unless explicitly overridden. */
+export async function plansDir(context: PlanContext): Promise<string | null> {
+  if (process.env.SPEC_LENS_PLANS_DIR)
+    return path.resolve(process.env.SPEC_LENS_PLANS_DIR);
+  const chat =
+    context.provider === "codex"
+      ? await codex.getChatDetail(context.chatId)
+      : await claude.getChatDetail(context.account, context.chatId);
+  return chat?.cwd ? path.join(chat.cwd, "plans") : null;
 }
 
 export interface PlanFile {
@@ -21,44 +31,74 @@ export interface PlanFile {
 }
 
 /** Resolve a caller-supplied name to a real path inside plansDir, or null. */
-function resolvePlanPath(name: string): string | null {
+function resolvePlanPath(dir: string, name: string): string | null {
   const base = path.basename(name); // strip any directory components
   if (base !== name) return null;
   if (!/\.(md|markdown)$/i.test(base)) return null;
-  const dir = plansDir();
-  const full = path.join(dir, base);
-  if (path.dirname(full) !== path.resolve(dir)) return null; // defense in depth
+  const root = path.resolve(dir);
+  const full = path.join(root, base);
+  if (path.dirname(full) !== root) return null; // defense in depth
   return full;
 }
 
-export async function listPlans(): Promise<PlanFile[]> {
-  const dir = plansDir();
-  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+export async function listPlans(dir: string): Promise<PlanFile[]> {
+  const entries = await fs
+    .readdir(dir, { withFileTypes: true })
+    .catch(() => []);
   const plans: PlanFile[] = [];
   for (const e of entries) {
     if (!e.isFile() || !/\.(md|markdown)$/i.test(e.name)) continue;
     const stat = await fs.stat(path.join(dir, e.name)).catch(() => null);
-    if (stat) plans.push({ name: e.name, updatedAt: new Date(stat.mtimeMs).toISOString() });
+    if (stat)
+      plans.push({
+        name: e.name,
+        updatedAt: new Date(stat.mtimeMs).toISOString(),
+      });
   }
   return plans.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function readPlan(name: string): Promise<string | null> {
-  const full = resolvePlanPath(name);
+export async function readPlan(
+  dir: string,
+  name: string,
+): Promise<string | null> {
+  const full = resolvePlanPath(dir, name);
   if (!full) return null;
   return fs.readFile(full, "utf8").catch(() => null);
 }
 
 /** Overwrite a plan file with new content. Returns false on invalid name/error. */
-export async function writePlan(name: string, content: string): Promise<boolean> {
-  const full = resolvePlanPath(name);
+export async function writePlan(
+  dir: string,
+  name: string,
+  content: string,
+): Promise<boolean> {
+  const full = resolvePlanPath(dir, name);
   if (!full) return false;
-  return fs.writeFile(full, content).then(() => true).catch(() => false);
+  return fs
+    .writeFile(full, content)
+    .then(() => true)
+    .catch(() => false);
+}
+
+export async function createPlan(
+  dir: string,
+  name: string,
+  content: string,
+): Promise<"created" | "exists" | "error"> {
+  const full = resolvePlanPath(dir, name);
+  if (!full) return "error";
+  await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
+  return fs
+    .writeFile(full, content, { flag: "wx" })
+    .then(() => "created" as const)
+    .catch((error: NodeJS.ErrnoException) =>
+      error.code === "EEXIST" ? "exists" : "error",
+    );
 }
 
 export type ReviewResult =
-  | { content: string; remainingComments: number }
-  | { error: string };
+  { content: string; remainingComments: number } | { error: string };
 
 export interface ReviewInput {
   name: string;
@@ -69,13 +109,17 @@ export interface ReviewInput {
 
 /** Resolve comments using the provider session selected for this plan. */
 export async function reviewPlan(input: ReviewInput): Promise<ReviewResult> {
-  const full = resolvePlanPath(input.name);
-  if (!full || !(await fs.stat(full).catch(() => null))) return { error: "plan not found" };
+  const dir = await plansDir(input);
+  if (!dir) return { error: "chat workspace not found" };
+  const full = resolvePlanPath(dir, input.name);
+  if (!full || !(await fs.stat(full).catch(() => null)))
+    return { error: "plan not found" };
 
   const prompt = `Use the plan-review skill to resolve every inline @me review comment in ${JSON.stringify(full)}. Only edit that plan document; do not implement code changes.`;
-  const location = input.provider === "claude"
-    ? await sessionLocation(input.account, input.chatId)
-    : null;
+  const location =
+    input.provider === "claude"
+      ? await claude.sessionLocation(input.account, input.chatId)
+      : null;
   if (input.provider === "claude" && !location) {
     return { error: "Could not locate that chat's Claude session." };
   }
@@ -91,7 +135,7 @@ export async function reviewPlan(input: ReviewInput): Promise<ReviewResult> {
           "--permission-mode",
           "acceptEdits",
           "--add-dir",
-          plansDir(),
+          dir,
           "--output-format",
           "text",
           prompt,
@@ -111,15 +155,19 @@ export async function reviewPlan(input: ReviewInput): Promise<ReviewResult> {
     input.provider === "claude"
       ? {
           env: { ...process.env, CLAUDE_CONFIG_DIR: location!.configDir },
-          cwd: location!.cwd ?? plansDir(),
+          cwd: location!.cwd ?? dir,
         }
-      : { cwd: plansDir() },
+      : { cwd: dir },
   ).catch((error: Error) => ({ error: error.message }));
 
   if ("error" in result) return { error: result.error.slice(0, 500) };
   if (result.timedOut) return { error: "The review timed out." };
   if (result.code !== 0) {
-    return { error: (result.stderr || `Codex exited with code ${result.code}`).trim().slice(0, 500) };
+    return {
+      error: (result.stderr || `Codex exited with code ${result.code}`)
+        .trim()
+        .slice(0, 500),
+    };
   }
 
   const content = await fs.readFile(full, "utf8").catch(() => null);
@@ -145,11 +193,12 @@ function sanitizeComment(comment: string): string {
  * document, or null if the file/offset is invalid.
  */
 export async function addComment(
+  dir: string,
   name: string,
   insertOffset: number,
   comment: string,
 ): Promise<string | null> {
-  const full = resolvePlanPath(name);
+  const full = resolvePlanPath(dir, name);
   if (!full) return null;
   const content = await fs.readFile(full, "utf8").catch(() => null);
   if (content == null) return null;
